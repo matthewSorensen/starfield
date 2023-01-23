@@ -100,16 +100,17 @@ class HHG:
                     yield a,b
 
 
-    def check_upwards(self, other, skip_identical = False):
+    def check_upwards(self, other, strict = False, flip = False):
         """ Check the elements of this HHG against the equal-to-larger elements
-        of another HHG. If skip_identical is provided, only check strictly larger ones.
+        of another HHG. If strict is true, only check strictly larger ones.
 
         Yields a list of possible intersection candidates, with the first element being
-        from this grid, and the second from the other grid. """
+        from this grid, and the second from the other grid. If flip is true,
+        reverse this order. """
         for i,g in self.grids.items():
             for (idx,idy),v in g.items():
                 level = i
-                if skip_identical:
+                if strict:
                     idx //= 2
                     idy //= 2
                     level -= 1
@@ -117,7 +118,7 @@ class HHG:
                     if level in other.grids and (idx,idy) in other.grids[level]:
                         for a in other.grids[level][(idx,idy)]:
                             for b in v:
-                                yield b,a
+                                yield (a,b) if flip else (b,a) 
                     idx //= 2
                     idy //= 2
                     level -= 1
@@ -134,3 +135,8 @@ class HHG:
                     
                     self.grids[level][idx].add(v)
 
+    def elements(self):
+        for grid in self.grids.values():
+            for bucket in grid.values():
+                for v in bucket:
+                    yield v

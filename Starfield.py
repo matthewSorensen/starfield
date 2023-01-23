@@ -18,6 +18,7 @@ import ezdxf
 from dataclasses import dataclass
 import time
 from hhg import HHG
+from itertools import chain
 
 
 # In[2]:
@@ -118,27 +119,27 @@ def inside_box(dimension, radius):
     return criteria
 
 
-# In[4]:
+# In[16]:
 
 
 dimension = 25 # Overall size that we should fill with the pattern
 trace = 0.003 * 25.4 # Minimum feature size we can fabricate
 space = 0.003 * 25.4 # Minimum distance between features we can fabricate
-fraction = 0.25      # Scale between poisson disc spacing and circle radius
-keepout = 1.1
+fraction = 0.25      # Scale between poisson disc spacing and circle radius - must be less than 0.25
+keepout = 1.0 #1.1
 starting_feature = 1 # The radius of the largest disc in the pattern
 exponent = 0.75 # Each time we iterate, how much do we shrink everything?
 
 points = [np.array((0.5 * dimension,0.5 * dimension))]
 scale, generation, generations =  starting_feature, 0, {0: {0}}
-scales = [scale]
+radii = [scale]
 
 while True:
     # Calculate the new feature size, check if it's too small to make
     scale *= exponent
     if 2 * scale < trace:
         break
-    scales.append(scale)
+    radii.append(scale)
     # Compute the new points
     old_count = len(points)
     pdsample(dimension, dimension, scale / fraction, points, criteria = inside_box(dimension, scale))
@@ -147,7 +148,7 @@ while True:
     generations[generation] =set(range(old_count, len(points)))
 
 points = np.array(points)
-scales = np.array(scales)
+radii = np.array(radii)
 
 
 # In[ ]:
@@ -168,50 +169,41 @@ scales = np.array(scales)
 
 
 
-# In[7]:
+# In[19]:
 
 
+def prune_circles(centers, radii, keepout, clearance):
+    effective_radii = np.maximum(keepout * scales, space + scales)
+    # Build an empty hierarchical hash grid that we will merge each successive generation of
+    # circles into. Each circle is stored as a pair of the index of its center and its generation.
+    margin = np.max(effective_radii)
+    bbox = np.min(centers, axis = 0) - margin, np.max(centers, axis = 0) + margin
+    acc = HHG(bbox)
+    
+    for i in range(len(generations)):
+        # Build an HHG of this generation, using the same bbox as the accumulator HHG
+        # so indicies are directly comparable.
+        new = HHG(bbox)
+        r = effective_radii[i]
+        for j in generations[i]:
+            new.insert_bbox(centers[j] - r, centers[j] + r, (j,i))
 
-def candidates(old, new, dead):
-    for a,b in old.check_upwards(new):
-        if b in dead:
-            continue
-        yield a,b
-    for b,a in new.check_upwards(old,skip_identical = True):
-        if b in dead:
-            continue
-        yield a,b
-
-def check_collision(points,prev_radii, generation, radius):
-    def check(old, new):
-        delta = points[old] - points[new]
-        return delta.dot(delta) < (prev_radii[generation[old]] + radius)**2
-    return check
-
-generation = dict()
-effective_radii = np.maximum(keepout * scales, space + scales)
-bounding_box = np.min(points, axis = 0) - max(effective_radii), np.max(points, axis = 0) + max(effective_radii)
-#Build an empty hierarchical hash grid that we will then merge everything into.
-prev = HHG(bounding_box)
-
-for i in range(len(generations)):
-    # Index this generation
-    new = HHG(bounding_box)
-    r = effective_radii[i]
-    for j in generations[i]:
-        new.insert_bbox(points[j] - r, points[j] + r, j)
-    # Then filter this generation against the previous ones
-    dead = set()
-    check = check_collision(points, effective_radii, generation, scales[i])
-
-    for old_element, new_element in candidates(prev,new,dead):
-        if check(old_element, new_element):
-            dead.add(new_element)
-    # Add this back in, and then set the generation for the surviving points
-    prev.merge(new, filter = lambda x: x not in dead)
-    for p in generations[i]:
-        if p not in dead:
-            generation[p] = i
+        # Then filter this generation against the previous ones and merge the elements
+        # that don't have any collisions
+        dead = set()
+        collisions = chain(acc.check_upwards(new),new.check_upwards(acc,strict = True, flip = True))
+        for (old_idx, old_gen),(new_idx,_) in collisions:
+            if new_idx in dead:
+                continue
+            delta = centers[old_idx] - centers[new_idx]
+            if delta.dot(delta) <= (effective_radii[old_gen] + radii[i])**2:
+                dead.add((new_idx,i))
+            
+        acc.merge(new, filter = lambda x: x not in dead)
+        
+    return acc
+    
+circles = prune_circles(points, radii, keepout, space)
 
 
 # In[ ]:
@@ -220,16 +212,14 @@ for i in range(len(generations)):
 
 
 
-# In[8]:
+# In[20]:
 
 
 doc = ezdxf.new(dxfversion="R2010")
 msp = doc.modelspace()
 
-for _,grid in prev.grids.items():
-    for _,v in grid.items():
-        for k in v:
-            msp.add_circle((points[k,0],points[k,1]), radius = scales[generation[k]])
+for index, generation in circles.elements():
+    msp.add_circle(points[index], radius = radii[generation])
         
 doc.saveas("test_small.dxf")
 
@@ -240,44 +230,13 @@ doc.saveas("test_small.dxf")
 
 
 
-# In[ ]:
-
-
-
-
-
-# In[ ]:
+# In[21]:
 
 
 @dataclass
 class Quote:
     s : str
         
-def format_circle(center, radius, error, layer):
-    x,y = center
-    n = max(20,math.ceil(math.pi / math.acos(abs(radius - error) / radius)))
-    yield 'fp_poly'
-    yield ['pts'] + list(['xy', x + radius * math.cos(t), y + radius * math.sin(t)] for t in np.linspace(0, 2 * math.pi, n+1)) 
-    yield ['layer', layer]
-    yield ['width', 0]
-
-
-# In[ ]:
-
-
-layer = 'F.SilkS'
-module_name = 'starfield-calibrator-front'
-circles = []
-n = 0
-        
-for _,grid in prev.grids.items():
-    for _,v in grid.items():
-        for k in v:
-            circles.append(format_circle(points[k],scales[generation[k]], 0.001, layer))
-
-        
-        
-
 def write_sexp(sexp,fp):
     if isinstance(sexp, Quote):
         f.write('"' + sexp.s + '"')
@@ -295,17 +254,56 @@ def write_sexp(sexp,fp):
             f.write('\n')
     else:
         f.write(str(sexp))
+
+
+def circle_to_tolerance(center, radius, error, minimum = 8):
+    x,y = center
+    n = max(minimum, math.ceil(math.pi / math.acos(abs(radius - error) / radius)))
+    for t in np.linspace(0, 2 * math.pi, n):
+        yield x + radius * math.cos(t), y + radius * math.sin(t)
+
+def kicad_polygon(layer, points):
+    yield 'fp_poly'
+    def sub():
+        yield 'pts'
+        for x,y in points:
+            yield ['xy',x,y]
+    yield sub()
+    yield ['layer',layer]
+    yield ['width',0]
     
+def kicad_module(name, layers, objects, description = '', tags = None):
+    yield 'module'
+    yield name
+    yield ['layer'] + layers
+    yield ["tedit", hex(int(time.time()))[2:]]
+    yield ['attr', 'virtual']
+    if description:
+        yield ["descr", Quote(description)],
+    if tags:
+        yield ['tags'] + tags
         
-header = ["module", module_name, ["layer", layer],["tedit", hex(int(time.time()))[2:]],
-         ["attr", "virtual"],
-         ["descr", Quote("Starfield calibrator target")],
-         ["tags", "starfield"]]
+    yield from objects
     
-expr = header + circles
-    
+layer = 'F.SilkS'
+module_name = 'starfield-calibrator-front'
+error = 0.001
+objects = (kicad_polygon(layer,circle_to_tolerance(points[idx],radii[gen], error)) for idx, gen in circles.elements())
+
 with open(module_name + ".kicad_mod", "w") as f:
-    write_sexp(expr,f)
+    write_sexp(kicad_module('starfield-calibrator-front',[layer], objects), f)
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
 
 
 # In[ ]:
