@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[22]:
 
 
 import numpy as np
@@ -21,7 +21,7 @@ from hhg import HHG
 from itertools import chain
 
 
-# In[2]:
+# In[23]:
 
 
 def annulus_sampler(r,k):
@@ -102,7 +102,7 @@ def pdsample(width, height, radius, points, criteria = None, k = 10):
     return points
 
 
-# In[3]:
+# In[24]:
 
 
 def inside_box(dimension, radius):
@@ -119,14 +119,14 @@ def inside_box(dimension, radius):
     return criteria
 
 
-# In[16]:
+# In[35]:
 
 
-dimension = 25 # Overall size that we should fill with the pattern
-trace = 0.003 * 25.4 # Minimum feature size we can fabricate
-space = 0.003 * 25.4 # Minimum distance between features we can fabricate
+dimension = 2 * 25 # Overall size that we should fill with the pattern
+trace = 2 * 0.003 * 25.4 # Minimum feature size we can fabricate
+space = 2 * 0.003 * 25.4 # Minimum distance between features we can fabricate
 fraction = 0.25      # Scale between poisson disc spacing and circle radius - must be less than 0.25
-keepout = 1.0 #1.1
+keepout = 1.1
 starting_feature = 1 # The radius of the largest disc in the pattern
 exponent = 0.75 # Each time we iterate, how much do we shrink everything?
 
@@ -151,25 +151,25 @@ points = np.array(points)
 radii = np.array(radii)
 
 
-# In[ ]:
+# In[53]:
 
 
+def multiscale_poisson(dimension, starting_radius, ending_radius, fraction = 0.25, iterations = 10):
+    points = [np.array((0.5 * dimension,0.5 * dimension))]
+    radii = np.exp(np.linspace(math.log(starting_radius), math.log(ending_radius), iterations))
+    generations = {0: {0}}
+    for generation,r in enumerate(radii):
+        old_count = len(points)
+        pdsample(dimension, dimension, r / fraction, points, criteria = inside_box(dimension, r))
+        generations[generation] = set(range(old_count, len(points)))
+
+    
+    return radii, np.array(points), generations
+
+radii, points, generations = multiscale_poisson(dimension, starting_feature, 0.5 * space, iterations = 10)
 
 
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[19]:
+# In[55]:
 
 
 def prune_circles(centers, radii, keepout, clearance):
@@ -206,13 +206,7 @@ def prune_circles(centers, radii, keepout, clearance):
 circles = prune_circles(points, radii, keepout, space)
 
 
-# In[ ]:
-
-
-
-
-
-# In[20]:
+# In[56]:
 
 
 doc = ezdxf.new(dxfversion="R2010")
@@ -224,13 +218,7 @@ for index, generation in circles.elements():
 doc.saveas("test_small.dxf")
 
 
-# In[ ]:
-
-
-
-
-
-# In[21]:
+# In[37]:
 
 
 @dataclass
@@ -262,6 +250,13 @@ def circle_to_tolerance(center, radius, error, minimum = 8):
     for t in np.linspace(0, 2 * math.pi, n):
         yield x + radius * math.cos(t), y + radius * math.sin(t)
 
+def circle_as_square(center, radius):
+    x,y = center
+    phase = 2 * math.pi * np.random.rand(1)
+    for t in phase + np.linspace(0,2 * math.pi, 5):
+        yield x + radius * math.cos(t), y + radius * math.sin(t)
+
+        
 def kicad_polygon(layer, points):
     yield 'fp_poly'
     def sub():
@@ -285,29 +280,11 @@ def kicad_module(name, layers, objects, description = '', tags = None):
         
     yield from objects
     
-layer = 'F.SilkS'
-module_name = 'starfield-calibrator-front'
+layer = 'B.Cu'
+module_name = 'starfield-calibrator-back'
 error = 0.001
-objects = (kicad_polygon(layer,circle_to_tolerance(points[idx],radii[gen], error)) for idx, gen in circles.elements())
+objects = (kicad_polygon(layer,circle_as_square(points[idx],radii[gen])) for idx, gen in circles.elements())
 
 with open(module_name + ".kicad_mod", "w") as f:
-    write_sexp(kicad_module('starfield-calibrator-front',[layer], objects), f)
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
+    write_sexp(kicad_module(module_name,[layer], objects), f)
 
