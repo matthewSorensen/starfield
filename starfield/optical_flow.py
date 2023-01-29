@@ -87,10 +87,10 @@ class OpticalFlowTracker:
     def finish(self):
         # Find the best ridid-body transform between the features that survived this round of flow
         # and the previous checkpoint.
-        _,_,t = kabsch_umeyama(self.features[self.state==1,0,:],self.raw_features[self.state==1,0,:])
+        r,_,t = kabsch_umeyama(self.features[self.state==1,0,:],self.raw_features[self.state==1,0,:])
         # Apply the inverse transformation to the new points, compare that to the old points,
         # and reject all feature points with too much error
-        error = np.linalg.norm(self.features[:,0,:] - (t + self.raw_features[:,0,:]), axis = 1)
+        error = np.linalg.norm(self.features[:,0,:] - (t + self.raw_features[:,0,:] @ r.T), axis = 1)
         good = error < self.parameters['max_tracking_error']
         # Record the traces of each point - if died, remove from the traces, otherwise note the current
         # position.
