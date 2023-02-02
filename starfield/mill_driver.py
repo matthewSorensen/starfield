@@ -64,12 +64,9 @@ class PewPewDriver(MachineDriver):
         return (np.array(status.position) / self.planner.microsteps)[0:3]
         
     def halt(self):
-
-        #
-        #    machine.realtime_message(OverrideMessage(1/32, 0.001))
-
-        # Send the override message
-        # wait until it's stopped
-        # read back the current position and update the planner
+        self.connection.realtime_message(OverrideMessage(1/32, 0.001))
+        time.sleep(0.25)
+        status = self.block_for_status()
+        self.planner.position =  np.array(status.position) / self.planner.microsteps
+        self.connection.realtime_message(OverrideMessage(1, 0.001))
         
-        pass
