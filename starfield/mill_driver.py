@@ -2,6 +2,7 @@ import numpy as np
 from pewpew.planner import MotionPlanner, KinematicLimits
 from pewpew import MachineConnection, find_usbtty, bind_halt_signal
 from pewpew.definitions import StatusFlag, OverrideMessage
+from pewpew.definitions import MessageType, HomingCyclePhase, HomingMessage
 from starfield.driver import MachineDriver
 import time
 
@@ -15,6 +16,7 @@ location = (0,0,0)
 ones = np.ones(4)
 plan = MotionPlanner(KinematicLimits(v, a, 5, 0.05), steps_per_inch, np.zeros(4))
 
+homing_speed = 2.0 / 60.0
 
 def get_planner(connection):
     status = connection.status()
@@ -70,3 +72,9 @@ class PewPewDriver(MachineDriver):
         self.planner.position =  np.array(status.position) / self.planner.microsteps
         self.connection.realtime_message(OverrideMessage(1, 0.001))
         
+    def home_z_axis(self):
+        self.connection.busy.clear()
+        self.connection.realtime_message(HomingMessage(4, HomingCyclePhase.APPROACH, homing_speed * self.planner.microsteps[2] * 1e-6))
+        time.sleep(0.1)
+        self.connection.wait_until_idle()
+

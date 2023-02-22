@@ -20,3 +20,13 @@ class MachineDriver:
     
     def get_current_position(self):
         pass
+
+    def home_z_axis(self):
+        """ Reference the machine along the camera's optical axis - will not be called with a deployed camera. """
+        pass
+
+    def stow_camera(self):
+        pass
+
+    def deploy_camera(self):
+        pass
