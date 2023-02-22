@@ -20,6 +20,8 @@ Options:
                              see OpenCV documentation for how to find this.
   --resolution TEXT          Desired camera capture resolution, in the format
                              WIDTHxHEIGHT
+  --driver TEXT              Python path to a class that provides a machine
+                             driver implementation.
   --focus-height FLOAT       Initial guess for the focus plane. If not
                              provided, a live camera view and jog interface
                              will appear before the autofocus pass.
@@ -28,7 +30,7 @@ Options:
                              both this argument and --focus-height are
                              provided, the autofocus pass will run without
                              user input.
-  --home / --no-home         Should the machine home/reference its z axis
+  --no-home / --home         Should the machine home/reference its z axis
                              before starting the calibration process?
   --target-thickness FLOAT   How far is the target surface about the work
                              surface of the machine? This parameter doesn't
@@ -44,6 +46,9 @@ Options:
                              of the camera's field of view.
   --help                     Show this message and exit.
 ```
+
+Whenever a live camera view window appears, the inteface is the same - 'q' to exit, 'w'/'s' to move z- and z+, and 'a'/'d' to decrease and increase the jog increment size.
+
 
 ## Calibration Targets
 
