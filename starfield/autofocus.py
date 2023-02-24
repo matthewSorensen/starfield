@@ -253,7 +253,7 @@ def autofocus(camera, driver, span, resolution, options = None, **kwargs):
     options.merge(**kwargs)
 
     sweep = discrete_sweep
-    if options.continuous: # How fast do we need to get to get our intended resolution?
+    if options.continuous and driver.__class__.REALTIME_POSITION: # How fast do we need to get to get our intended resolution?
         resolution = 0.5 * resolution * options.get_framerate(camera)
         sweep = continuous_sweep
         

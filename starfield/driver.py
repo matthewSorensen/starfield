@@ -1,8 +1,11 @@
 import time
 import importlib
+import numpy as np
 
 class MachineDriver:
     """A generic interface for interfacing to various motion control systems"""
+
+    REALTIME_POSITION = False
     
     def __init__(self):
         pass
@@ -26,7 +29,7 @@ class MachineDriver:
             time.sleep(0.25)
     
     def get_current_position(self):
-        return 0,0,0
+        return np.zeros(3)
 
     def home_z_axis(self):
         """ Reference the machine along the camera's optical axis - will not be called with a deployed camera. """

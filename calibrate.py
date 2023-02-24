@@ -107,7 +107,7 @@ def callibrate(*args,**kwargs):
             driver.move_to((x,y,coarse_focus))
             
         focus_range = kwargs['focus_range']
-        if focus_focus is None:
+        if focus_range is None:
             input("Jog the system until it is out of focus - press enter to begin ")
             manual_focus_loop(camera, driver)
             _,_,focus_range = driver.get_current_position()
@@ -115,7 +115,9 @@ def callibrate(*args,**kwargs):
 
         # Autofocus with the supplied resolution and mode...
         # Then optical-flow track...
-            
+        z = autofocus(camera, driver, (coarse_focus - focus_range, coarse_focus + focus_range), 0.1, continuous = False)
+        print(z)
+        
         camera.release()
 
 if __name__ == '__main__':
