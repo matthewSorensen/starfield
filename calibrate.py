@@ -59,8 +59,9 @@ def manual_focus_loop(camera, driver, increment = 0.1):
 
 @click.option('--driver', default = "starfield.driver.MachineDriver", type = str, help = "Python path to a class that provides a machine driver implementation.")
 
-@click.option('--focus-height', default = None, type = float, help = "Initial guess for the focus plane. If not provided, a live camera view and jog interface will appear before the autofocus pass.")
-@click.option('--focus-range', default = None, type = float, help = "How larger of a range should the autofocus pass search on either side of the focus height? If both this argument and --focus-height are provided, the autofocus pass will run without user input.")
+@click.option('--focus-height', default = None, type = float, help = "Z height at which the calibration target is in focus. If provided, the autofocus pass is skipped.")
+@click.option('--focus-coarse', default = None, type = float, help = "Initial guess for the focus plane. If not provided, a live camera view and jog interface will appear before the autofocus pass.")
+@click.option('--focus-range', default = None, type = float, help = "How larger of a range should the autofocus pass search on either side of the focus height? If both this argument and --focus-coarse are provided, the autofocus pass will run without user input.")
 @click.option('--no-home/--home', default = True, help = "Should the machine home/reference its z axis before starting the calibration process?")
 @click.option('--target-thickness', default = 0, type = float, help = "How far is the target surface about the work surface of the machine? This parameter doesn't impact the calibration process, but is applied to saved focal plane offsets.")
 
@@ -71,7 +72,7 @@ def manual_focus_loop(camera, driver, increment = 0.1):
 
 @click.argument('output', type=click.File('w'))
 
-def callibrate(*args,**kwargs):
+def calibrate(*args,**kwargs):
 
     with load_driver(kwargs['driver'])() as driver:
     
@@ -98,7 +99,7 @@ def callibrate(*args,**kwargs):
 
         x,y,z = driver.get_current_position()
         # Get the initial guess for the focus height and search range
-        coarse_focus = kwargs['focus_height']
+        coarse_focus = kwargs['focus_coarse']
         if coarse_focus is None:
             input("Jog the system until it is roughly in focus - press enter to begin ")
             manual_focus_loop(camera, driver)

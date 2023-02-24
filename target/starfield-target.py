@@ -1,28 +1,12 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[22]:
-
-
 import numpy as np
-get_ipython().run_line_magic('matplotlib', 'inline')
-import matplotlib
-import matplotlib.pyplot as plt
-import matplotlib.tri as tri
 from numpy.random import rand
 import math
 from collections import defaultdict
-matplotlib.rcParams['figure.figsize'] = [14.0,14.0]
-import inspect
-import ezdxf
-from dataclasses import dataclass
-import time
 from hhg import HHG
 from itertools import chain
+import click
 
-
-# In[23]:
-
+from kicad_output import write_squares
 
 def annulus_sampler(r,k):
     u,v = rand(k), rand(k)
@@ -102,9 +86,6 @@ def pdsample(width, height, radius, points, criteria = None, k = 10):
     return points
 
 
-# In[24]:
-
-
 def inside_box(dimension, radius):
     def criteria(pt):
         x,y = pt
@@ -118,42 +99,6 @@ def inside_box(dimension, radius):
         return True
     return criteria
 
-
-# In[35]:
-
-
-dimension = 2 * 25 # Overall size that we should fill with the pattern
-trace = 2 * 0.003 * 25.4 # Minimum feature size we can fabricate
-space = 2 * 0.003 * 25.4 # Minimum distance between features we can fabricate
-fraction = 0.25      # Scale between poisson disc spacing and circle radius - must be less than 0.25
-keepout = 1.1
-starting_feature = 1 # The radius of the largest disc in the pattern
-exponent = 0.75 # Each time we iterate, how much do we shrink everything?
-
-points = [np.array((0.5 * dimension,0.5 * dimension))]
-scale, generation, generations =  starting_feature, 0, {0: {0}}
-radii = [scale]
-
-while True:
-    # Calculate the new feature size, check if it's too small to make
-    scale *= exponent
-    if 2 * scale < trace:
-        break
-    radii.append(scale)
-    # Compute the new points
-    old_count = len(points)
-    pdsample(dimension, dimension, scale / fraction, points, criteria = inside_box(dimension, scale))
-    # Record them in generation log
-    generation += 1
-    generations[generation] =set(range(old_count, len(points)))
-
-points = np.array(points)
-radii = np.array(radii)
-
-
-# In[53]:
-
-
 def multiscale_poisson(dimension, starting_radius, ending_radius, fraction = 0.25, iterations = 10):
     points = [np.array((0.5 * dimension,0.5 * dimension))]
     radii = np.exp(np.linspace(math.log(starting_radius), math.log(ending_radius), iterations))
@@ -166,14 +111,9 @@ def multiscale_poisson(dimension, starting_radius, ending_radius, fraction = 0.2
     
     return radii, np.array(points), generations
 
-radii, points, generations = multiscale_poisson(dimension, starting_feature, 0.5 * space, iterations = 10)
 
-
-# In[55]:
-
-
-def prune_circles(centers, radii, keepout, clearance):
-    effective_radii = np.maximum(keepout * scales, space + scales)
+def prune_circles(centers, radii, generations, keepout, clearance):
+    effective_radii = np.maximum(keepout * radii, clearance + radii)
     # Build an empty hierarchical hash grid that we will merge each successive generation of
     # circles into. Each circle is stored as a pair of the index of its center and its generation.
     margin = np.max(effective_radii)
@@ -202,89 +142,25 @@ def prune_circles(centers, radii, keepout, clearance):
         acc.merge(new, filter = lambda x: x not in dead)
         
     return acc
+
+
+@click.command()
+@click.option('--size', default = 25.4, type = float, help = "Target size in mm")
+@click.option('--trace', default = 0.006 * 25.4, type = float, help = "Smallest positive feature to create.")
+@click.option('--space', default = 0.006 * 25.4, type = float, help = "Smallest distance between features to create.")
+@click.option('--initial-size', default = 1, type = float, help = "Largest feature to create.")
+@click.option('--layer', default = "B.Cu", type = str, help = "KiCAD layer for features.")
+@click.option('--module', default = "starfield-target", type = str, help = "KiCAD module name - also determines output path.")
+
+def write_target(*args,**kwargs):
+
+    keepout= 1.1
     
-circles = prune_circles(points, radii, keepout, space)
+    radii, points, generations = multiscale_poisson(kwargs['size'], kwargs['initial_size'], 0.5 * kwargs['trace'] , iterations = 10)
+    circles = prune_circles(points, radii, generations, keepout, kwargs['space'])
+    squares = ((points[idx], radii[gen]) for idx, gen in circles.elements())
+    write_squares(squares, kwargs['layer'], kwargs['module'], kwargs['module'] + '.kicad_mod')
 
-
-# In[56]:
-
-
-doc = ezdxf.new(dxfversion="R2010")
-msp = doc.modelspace()
-
-for index, generation in circles.elements():
-    msp.add_circle(points[index], radius = radii[generation])
-        
-doc.saveas("test_small.dxf")
-
-
-# In[37]:
-
-
-@dataclass
-class Quote:
-    s : str
-        
-def write_sexp(sexp,fp):
-    if isinstance(sexp, Quote):
-        f.write('"' + sexp.s + '"')
-    elif isinstance(sexp, list) or inspect.isgenerator(sexp):
-        head = None
-        f.write('(')
-        for x in sexp:
-            if head is None:
-                head = x
-            else:
-                f.write(' ')
-            write_sexp(x,f)
-        f.write(')')
-        if head == 'xy':
-            f.write('\n')
-    else:
-        f.write(str(sexp))
-
-
-def circle_to_tolerance(center, radius, error, minimum = 8):
-    x,y = center
-    n = max(minimum, math.ceil(math.pi / math.acos(abs(radius - error) / radius)))
-    for t in np.linspace(0, 2 * math.pi, n):
-        yield x + radius * math.cos(t), y + radius * math.sin(t)
-
-def circle_as_square(center, radius):
-    x,y = center
-    phase = 2 * math.pi * np.random.rand(1)
-    for t in phase + np.linspace(0,2 * math.pi, 5):
-        yield x + radius * math.cos(t), y + radius * math.sin(t)
-
-        
-def kicad_polygon(layer, points):
-    yield 'fp_poly'
-    def sub():
-        yield 'pts'
-        for x,y in points:
-            yield ['xy',x,y]
-    yield sub()
-    yield ['layer',layer]
-    yield ['width',0]
-    
-def kicad_module(name, layers, objects, description = '', tags = None):
-    yield 'module'
-    yield name
-    yield ['layer'] + layers
-    yield ["tedit", hex(int(time.time()))[2:]]
-    yield ['attr', 'virtual']
-    if description:
-        yield ["descr", Quote(description)],
-    if tags:
-        yield ['tags'] + tags
-        
-    yield from objects
-    
-layer = 'B.Cu'
-module_name = 'starfield-calibrator-back'
-error = 0.001
-objects = (kicad_polygon(layer,circle_as_square(points[idx],radii[gen])) for idx, gen in circles.elements())
-
-with open(module_name + ".kicad_mod", "w") as f:
-    write_sexp(kicad_module(module_name,[layer], objects), f)
+if __name__ == '__main__':
+    write_target()
 
